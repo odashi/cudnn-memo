@@ -6,6 +6,26 @@
 #include <cuda.h>
 #include <cudnn.h>
 
+const int in_n = 1;
+const int in_c = 1;
+const int in_h = 5;
+const int in_w = 5;
+
+const int filt_k = 1;
+const int filt_c = 1;
+const int filt_h = 2;
+const int filt_w = 2;
+
+const int pad_h = 0;
+const int pad_w = 0;
+const int str_h = 1;
+const int str_w = 1;
+const int dil_h = 1;
+const int dil_w = 1;
+
+const int in_bias = 1;
+const int filt_bias = 1;
+
 #define CUDA_CALL(f) { \
   cudaError_t err = (f); \
   if (err != cudaSuccess) { \
@@ -24,14 +44,9 @@
   } \
 }
 
-__global__ void dev_const(float *px, float k) {
+__global__ void dev_iota(float *px, float bias) {
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  px[tid] = k;
-}
-
-__global__ void dev_iota(float *px) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  px[tid] = tid;
+  px[tid] = tid + bias;
 }
 
 void print(const float *data, int n, int c, int h, int w) {
@@ -46,7 +61,7 @@ void print(const float *data, int n, int c, int h, int w) {
       std::cout << "n=" << i << ", c=" << j << ":" << std::endl;
       for (int k = 0; k < h; ++k) {
         for (int l = 0; l < w; ++l) {
-          std::cout << std::setw(4) << std::right << buffer[a];
+          std::cout << std::setw(6) << std::right << buffer[a];
           ++a;
         }
         std::cout << std::endl;
@@ -61,10 +76,6 @@ int main() {
   CUDNN_CALL(cudnnCreate(&cudnn));
 
   // input
-  const int in_n = 1;
-  const int in_c = 1;
-  const int in_h = 5;
-  const int in_w = 5;
   std::cout << "in_n: " << in_n << std::endl;
   std::cout << "in_c: " << in_c << std::endl;
   std::cout << "in_h: " << in_h << std::endl;
@@ -82,10 +93,6 @@ int main() {
         &in_data, in_n * in_c * in_h * in_w * sizeof(float)));
 
   // filter
-  const int filt_k = 1;
-  const int filt_c = 1;
-  const int filt_h = 2;
-  const int filt_w = 2;
   std::cout << "filt_k: " << filt_k << std::endl;
   std::cout << "filt_c: " << filt_c << std::endl;
   std::cout << "filt_h: " << filt_h << std::endl;
@@ -103,12 +110,6 @@ int main() {
       &filt_data, filt_k * filt_c * filt_h * filt_w * sizeof(float)));
 
   // convolution
-  const int pad_h = 1;
-  const int pad_w = 1;
-  const int str_h = 1;
-  const int str_w = 1;
-  const int dil_h = 1;
-  const int dil_w = 1;
   std::cout << "pad_h: " << pad_h << std::endl;
   std::cout << "pad_w: " << pad_w << std::endl;
   std::cout << "str_h: " << str_h << std::endl;
@@ -174,8 +175,8 @@ int main() {
   // perform
   float alpha = 1.f;
   float beta = 0.f;
-  dev_iota<<<in_w * in_h, in_n * in_c>>>(in_data);
-  dev_const<<<filt_w * filt_h, filt_k * filt_c>>>(filt_data, 1.f);
+  dev_iota<<<in_w * in_h, in_n * in_c>>>(in_data, in_bias);
+  dev_iota<<<filt_w * filt_h, filt_k * filt_c>>>(filt_data, filt_bias);
   CUDNN_CALL(cudnnConvolutionForward(
       cudnn,
       &alpha, in_desc, in_data, filt_desc, filt_data,
