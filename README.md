@@ -4,4 +4,4 @@ Example code of cuDNN
 Build
 -----
 
-    $ nvcc <code>.cu -lcudnn && ./a.out
+    $ nvcc -std=c++11 <code>.cu -lcudnn && ./a.out

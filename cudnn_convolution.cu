@@ -1,20 +1,21 @@
 #include <iomanip>
 #include <iostream>
 #include <cstdlib>
+#include <memory>
 #include <vector>
 
 #include <cuda.h>
 #include <cudnn.h>
 
-const int in_n = 1;
-const int in_c = 1;
-const int in_h = 5;
-const int in_w = 5;
+const int x_n = 1;
+const int x_c = 1;
+const int x_h = 5;
+const int x_w = 5;
 
-const int filt_k = 1;
-const int filt_c = 1;
-const int filt_h = 2;
-const int filt_w = 2;
+const int w_k = 1;
+const int w_c = 1;
+const int w_h = 2;
+const int w_w = 2;
 
 const int pad_h = 0;
 const int pad_w = 0;
@@ -23,14 +24,14 @@ const int str_w = 1;
 const int dil_h = 1;
 const int dil_w = 1;
 
-const int in_bias = 1;
-const int filt_bias = 1;
+const int x_bias = 1;
+const int w_bias = 1;
 
 #define CUDA_CALL(f) { \
   cudaError_t err = (f); \
   if (err != cudaSuccess) { \
     std::cout \
-        << "    Error occurred: " << err << std::endl; \
+        << #f ": " << err << std::endl; \
     std::exit(1); \
   } \
 }
@@ -39,21 +40,32 @@ const int filt_bias = 1;
   cudnnStatus_t err = (f); \
   if (err != CUDNN_STATUS_SUCCESS) { \
     std::cout \
-        << "    Error occurred: " << err << std::endl; \
+        << #f ": " << err << std::endl; \
     std::exit(1); \
   } \
 }
 
+__global__ void dev_const(float *px, float k) {
+  const int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  px[tid] = k;
+}
+
 __global__ void dev_iota(float *px, float bias) {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  const int tid = threadIdx.x + blockIdx.x * blockDim.x;
   px[tid] = tid + bias;
+}
+
+template<typename T = void>
+std::shared_ptr<T> allocate(std::size_t size) {
+  T *ptr;
+  CUDA_CALL(::cudaMalloc(&ptr, size));
+  return std::shared_ptr<T>(ptr, [](T *ptr) { ::cudaFree(ptr); });
 }
 
 void print(const float *data, int n, int c, int h, int w) {
   std::vector<float> buffer(1 << 20);
-  CUDA_CALL(cudaMemcpy(
-        buffer.data(), data,
-        n * c * h * w * sizeof(float),
+  CUDA_CALL(::cudaMemcpy(
+        buffer.data(), data, n * c * h * w * sizeof(float),
         cudaMemcpyDeviceToHost));
   int a = 0;
   for (int i = 0; i < n; ++i) {
@@ -76,40 +88,82 @@ int main() {
   CUDNN_CALL(cudnnCreate(&cudnn));
 
   // input
-  std::cout << "in_n: " << in_n << std::endl;
-  std::cout << "in_c: " << in_c << std::endl;
-  std::cout << "in_h: " << in_h << std::endl;
-  std::cout << "in_w: " << in_w << std::endl;
-  std::cout << std::endl;
-
-  cudnnTensorDescriptor_t in_desc;
-  CUDNN_CALL(cudnnCreateTensorDescriptor(&in_desc));
+  cudnnTensorDescriptor_t x_desc;
+  CUDNN_CALL(cudnnCreateTensorDescriptor(&x_desc));
   CUDNN_CALL(cudnnSetTensor4dDescriptor(
-        in_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
-        in_n, in_c, in_h, in_w));
-
-  float *in_data;
-  CUDA_CALL(cudaMalloc(
-        &in_data, in_n * in_c * in_h * in_w * sizeof(float)));
+        x_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, x_n, x_c, x_h, x_w));
 
   // filter
-  std::cout << "filt_k: " << filt_k << std::endl;
-  std::cout << "filt_c: " << filt_c << std::endl;
-  std::cout << "filt_h: " << filt_h << std::endl;
-  std::cout << "filt_w: " << filt_w << std::endl;
-  std::cout << std::endl;
-
-  cudnnFilterDescriptor_t filt_desc;
-  CUDNN_CALL(cudnnCreateFilterDescriptor(&filt_desc));
+  cudnnFilterDescriptor_t w_desc;
+  CUDNN_CALL(cudnnCreateFilterDescriptor(&w_desc));
   CUDNN_CALL(cudnnSetFilter4dDescriptor(
-        filt_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW,
-        filt_k, filt_c, filt_h, filt_w));
-
-  float *filt_data;
-  CUDA_CALL(cudaMalloc(
-      &filt_data, filt_k * filt_c * filt_h * filt_w * sizeof(float)));
+        w_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, w_k, w_c, w_h, w_w));
 
   // convolution
+  cudnnConvolutionDescriptor_t conv_desc;
+  CUDNN_CALL(cudnnCreateConvolutionDescriptor(&conv_desc));
+#if CUDNN_MAJOR >= 6
+  CUDNN_CALL(cudnnSetConvolution2dDescriptor(
+        conv_desc,
+        pad_h, pad_w, str_h, str_w, dil_h, dil_w,
+        CUDNN_CONVOLUTION, CUDNN_DATA_FLOAT));
+#else
+  CUDNN_CALL(cudnnSetConvolution2dDescriptor(
+        conv_desc,
+        pad_h, pad_w, str_h, str_w, dil_h, dil_w,
+        CUDNN_CONVOLUTION));
+#endif  // CUDNN_MAJOR
+
+  // output
+  int y_n, y_c, y_h, y_w;
+  CUDNN_CALL(cudnnGetConvolution2dForwardOutputDim(
+        conv_desc, x_desc, w_desc, &y_n, &y_c, &y_h, &y_w));
+
+  cudnnTensorDescriptor_t y_desc;
+  CUDNN_CALL(cudnnCreateTensorDescriptor(&y_desc));
+  CUDNN_CALL(cudnnSetTensor4dDescriptor(
+        y_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, y_n, y_c, y_h, y_w));
+
+  // algorithm
+  cudnnConvolutionFwdAlgo_t algo;
+  CUDNN_CALL(cudnnGetConvolutionForwardAlgorithm(
+        cudnn,
+        x_desc, w_desc, conv_desc, y_desc,
+        CUDNN_CONVOLUTION_FWD_PREFER_FASTEST, 0, &algo));
+
+  // workspace
+  size_t ws_size;
+  CUDNN_CALL(cudnnGetConvolutionForwardWorkspaceSize(
+        cudnn, x_desc, w_desc, conv_desc, y_desc, algo, &ws_size));
+
+  // perform
+  float alpha = 1.f;
+  float beta = 0.f;
+
+  auto x_data = ::allocate<float>(x_n * x_c * x_h * x_w * sizeof(float));
+  auto w_data = ::allocate<float>(w_k * w_c * w_h * w_w * sizeof(float));
+  auto y_data = ::allocate<float>(y_n * y_c * y_h * y_w * sizeof(float));
+  auto ws_data = ::allocate(ws_size);
+
+  dev_iota<<<x_w * x_h, x_n * x_c>>>(x_data.get(), x_bias);
+  dev_iota<<<w_w * w_h, w_k * w_c>>>(w_data.get(), w_bias);
+  CUDNN_CALL(cudnnConvolutionForward(
+      cudnn,
+      &alpha, x_desc, x_data.get(), w_desc, w_data.get(),
+      conv_desc, algo, ws_data.get(), ws_size,
+      &beta, y_desc, y_data.get()));
+
+  // results
+  std::cout << "x_n: " << x_n << std::endl;
+  std::cout << "x_c: " << x_c << std::endl;
+  std::cout << "x_h: " << x_h << std::endl;
+  std::cout << "x_w: " << x_w << std::endl;
+  std::cout << std::endl;
+  std::cout << "w_k: " << w_k << std::endl;
+  std::cout << "w_c: " << w_c << std::endl;
+  std::cout << "w_h: " << w_h << std::endl;
+  std::cout << "w_w: " << w_w << std::endl;
+  std::cout << std::endl;
   std::cout << "pad_h: " << pad_h << std::endl;
   std::cout << "pad_w: " << pad_w << std::endl;
   std::cout << "str_h: " << str_h << std::endl;
@@ -117,91 +171,30 @@ int main() {
   std::cout << "dil_h: " << dil_h << std::endl;
   std::cout << "dil_w: " << dil_w << std::endl;
   std::cout << std::endl;
-
-  cudnnConvolutionDescriptor_t conv_desc;
-  CUDNN_CALL(cudnnCreateConvolutionDescriptor(&conv_desc));
-  CUDNN_CALL(cudnnSetConvolution2dDescriptor(
-        conv_desc,
-        pad_h, pad_w, str_h, str_w, dil_h, dil_w,
-        CUDNN_CONVOLUTION, CUDNN_DATA_FLOAT));
-
-  // output
-  int out_n;
-  int out_c;
-  int out_h;
-  int out_w;
-  
-  CUDNN_CALL(cudnnGetConvolution2dForwardOutputDim(
-        conv_desc, in_desc, filt_desc,
-        &out_n, &out_c, &out_h, &out_w));
-
-  std::cout << "out_n: " << out_n << std::endl;
-  std::cout << "out_c: " << out_c << std::endl;
-  std::cout << "out_h: " << out_h << std::endl;
-  std::cout << "out_w: " << out_w << std::endl;
+  std::cout << "y_n: " << y_n << std::endl;
+  std::cout << "y_c: " << y_c << std::endl;
+  std::cout << "y_h: " << y_h << std::endl;
+  std::cout << "y_w: " << y_w << std::endl;
   std::cout << std::endl;
-
-  cudnnTensorDescriptor_t out_desc;
-  CUDNN_CALL(cudnnCreateTensorDescriptor(&out_desc));
-  CUDNN_CALL(cudnnSetTensor4dDescriptor(
-        out_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT,
-        out_n, out_c, out_h, out_w));
-
-  float *out_data;
-  CUDA_CALL(cudaMalloc(
-        &out_data, out_n * out_c * out_h * out_w * sizeof(float)));
-
-  // algorithm
-  cudnnConvolutionFwdAlgo_t algo;
-  CUDNN_CALL(cudnnGetConvolutionForwardAlgorithm(
-        cudnn,
-        in_desc, filt_desc, conv_desc, out_desc,
-        CUDNN_CONVOLUTION_FWD_PREFER_FASTEST, 0, &algo));
 
   std::cout << "Convolution algorithm: " << algo << std::endl;
-  std::cout << std::endl;
-
-  // workspace
-  size_t ws_size;
-  CUDNN_CALL(cudnnGetConvolutionForwardWorkspaceSize(
-        cudnn, in_desc, filt_desc, conv_desc, out_desc, algo, &ws_size));
-
-  float *ws_data;
-  CUDA_CALL(cudaMalloc(&ws_data, ws_size));
-
   std::cout << "Workspace size: " << ws_size << std::endl;
   std::cout << std::endl;
 
-  // perform
-  float alpha = 1.f;
-  float beta = 0.f;
-  dev_iota<<<in_w * in_h, in_n * in_c>>>(in_data, in_bias);
-  dev_iota<<<filt_w * filt_h, filt_k * filt_c>>>(filt_data, filt_bias);
-  CUDNN_CALL(cudnnConvolutionForward(
-      cudnn,
-      &alpha, in_desc, in_data, filt_desc, filt_data,
-      conv_desc, algo, ws_data, ws_size,
-      &beta, out_desc, out_data));
+  std::cout << "x_data:" << std::endl;
+  print(x_data.get(), x_n, x_c, x_h, x_w);
 
-  // results
-  std::cout << "in_data:" << std::endl;
-  print(in_data, in_n, in_c, in_h, in_w);
-  
-  std::cout << "filt_data:" << std::endl;
-  print(filt_data, filt_k, filt_c, filt_h, filt_w);
-  
-  std::cout << "out_data:" << std::endl;
-  print(out_data, out_n, out_c, out_h, out_w);
+  std::cout << "w_data:" << std::endl;
+  print(w_data.get(), w_k, w_c, w_h, w_w);
+
+  std::cout << "y_data:" << std::endl;
+  print(y_data.get(), y_n, y_c, y_h, y_w);
 
   // finalizing
-  CUDA_CALL(cudaFree(ws_data));
-  CUDA_CALL(cudaFree(out_data));
-  CUDNN_CALL(cudnnDestroyTensorDescriptor(out_desc));
+  CUDNN_CALL(cudnnDestroyTensorDescriptor(y_desc));
   CUDNN_CALL(cudnnDestroyConvolutionDescriptor(conv_desc));
-  CUDA_CALL(cudaFree(filt_data));
-  CUDNN_CALL(cudnnDestroyFilterDescriptor(filt_desc));
-  CUDA_CALL(cudaFree(in_data));
-  CUDNN_CALL(cudnnDestroyTensorDescriptor(in_desc));
+  CUDNN_CALL(cudnnDestroyFilterDescriptor(w_desc));
+  CUDNN_CALL(cudnnDestroyTensorDescriptor(x_desc));
   CUDNN_CALL(cudnnDestroy(cudnn));
   return 0;
 }
