@@ -28,19 +28,17 @@ const int x_bias = 1;
 const int w_bias = 1;
 
 #define CUDA_CALL(f) { \
-  cudaError_t err = (f); \
+  ::cudaError_t err = (f); \
   if (err != cudaSuccess) { \
-    std::cout \
-        << #f ": " << err << std::endl; \
+    std::cout << #f ": " << err << std::endl; \
     std::exit(1); \
   } \
 }
 
 #define CUDNN_CALL(f) { \
-  cudnnStatus_t err = (f); \
+  ::cudnnStatus_t err = (f); \
   if (err != CUDNN_STATUS_SUCCESS) { \
-    std::cout \
-        << #f ": " << err << std::endl; \
+    std::cout << #f ": " << err << std::endl; \
     std::exit(1); \
   } \
 }
@@ -84,23 +82,23 @@ void print(const float *data, int n, int c, int h, int w) {
 }
 
 int main() {
-  cudnnHandle_t cudnn;
+  ::cudnnHandle_t cudnn;
   CUDNN_CALL(::cudnnCreate(&cudnn));
 
   // input
-  cudnnTensorDescriptor_t x_desc;
+  ::cudnnTensorDescriptor_t x_desc;
   CUDNN_CALL(::cudnnCreateTensorDescriptor(&x_desc));
   CUDNN_CALL(::cudnnSetTensor4dDescriptor(
         x_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, x_n, x_c, x_h, x_w));
 
   // filter
-  cudnnFilterDescriptor_t w_desc;
+  ::cudnnFilterDescriptor_t w_desc;
   CUDNN_CALL(::cudnnCreateFilterDescriptor(&w_desc));
   CUDNN_CALL(::cudnnSetFilter4dDescriptor(
         w_desc, CUDNN_DATA_FLOAT, CUDNN_TENSOR_NCHW, w_k, w_c, w_h, w_w));
 
   // convolution
-  cudnnConvolutionDescriptor_t conv_desc;
+  ::cudnnConvolutionDescriptor_t conv_desc;
   CUDNN_CALL(::cudnnCreateConvolutionDescriptor(&conv_desc));
 #if CUDNN_MAJOR >= 6
   CUDNN_CALL(::cudnnSetConvolution2dDescriptor(
@@ -119,15 +117,15 @@ int main() {
   CUDNN_CALL(::cudnnGetConvolution2dForwardOutputDim(
         conv_desc, x_desc, w_desc, &y_n, &y_c, &y_h, &y_w));
 
-  cudnnTensorDescriptor_t y_desc;
+  ::cudnnTensorDescriptor_t y_desc;
   CUDNN_CALL(::cudnnCreateTensorDescriptor(&y_desc));
   CUDNN_CALL(::cudnnSetTensor4dDescriptor(
         y_desc, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, y_n, y_c, y_h, y_w));
 
   // algorithms
-  cudnnConvolutionFwdAlgo_t fwd_algo;
-  cudnnConvolutionBwdDataAlgo_t bwd_x_algo;
-  cudnnConvolutionBwdFilterAlgo_t bwd_w_algo;
+  ::cudnnConvolutionFwdAlgo_t fwd_algo;
+  ::cudnnConvolutionBwdDataAlgo_t bwd_x_algo;
+  ::cudnnConvolutionBwdFilterAlgo_t bwd_w_algo;
   CUDNN_CALL(::cudnnGetConvolutionForwardAlgorithm(
         cudnn,
         x_desc, w_desc, conv_desc, y_desc,
