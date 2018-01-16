@@ -148,27 +148,27 @@ int main() {
         &bwd_beta, w_desc, gw_data.get()));
 
   // results
-  std::cout << "x_n: " << x_n << std::endl;
-  std::cout << "x_c: " << x_c << std::endl;
-  std::cout << "x_h: " << x_h << std::endl;
   std::cout << "x_w: " << x_w << std::endl;
+  std::cout << "x_h: " << x_h << std::endl;
+  std::cout << "x_c: " << x_c << std::endl;
+  std::cout << "x_n: " << x_n << std::endl;
   std::cout << std::endl;
-  std::cout << "w_k: " << w_k << std::endl;
-  std::cout << "w_c: " << w_c << std::endl;
-  std::cout << "w_h: " << w_h << std::endl;
   std::cout << "w_w: " << w_w << std::endl;
+  std::cout << "w_h: " << w_h << std::endl;
+  std::cout << "w_c: " << w_c << std::endl;
+  std::cout << "w_k: " << w_k << std::endl;
   std::cout << std::endl;
-  std::cout << "pad_h: " << pad_h << std::endl;
   std::cout << "pad_w: " << pad_w << std::endl;
-  std::cout << "str_h: " << str_h << std::endl;
+  std::cout << "pad_h: " << pad_h << std::endl;
   std::cout << "str_w: " << str_w << std::endl;
-  std::cout << "dil_h: " << dil_h << std::endl;
+  std::cout << "str_h: " << str_h << std::endl;
   std::cout << "dil_w: " << dil_w << std::endl;
+  std::cout << "dil_h: " << dil_h << std::endl;
   std::cout << std::endl;
-  std::cout << "y_n: " << y_n << std::endl;
-  std::cout << "y_c: " << y_c << std::endl;
-  std::cout << "y_h: " << y_h << std::endl;
   std::cout << "y_w: " << y_w << std::endl;
+  std::cout << "y_h: " << y_h << std::endl;
+  std::cout << "y_c: " << y_c << std::endl;
+  std::cout << "y_n: " << y_n << std::endl;
   std::cout << std::endl;
 
   std::cout << "Algorithm (fwd): " << fwd_algo << std::endl;
