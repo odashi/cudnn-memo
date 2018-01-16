@@ -7,22 +7,22 @@
 #include <cuda.h>
 #include <cudnn.h>
 
-const int x_n = 1;
-const int x_c = 1;
-const int x_h = 5;
 const int x_w = 5;
+const int x_h = 5;
+const int x_c = 1;
+const int x_n = 1;
 
-const int w_k = 1;
-const int w_c = 1;
-const int w_h = 2;
 const int w_w = 2;
+const int w_h = 2;
+const int w_c = 1;
+const int w_k = 1;
 
-const int pad_h = 0;
 const int pad_w = 0;
-const int str_h = 1;
+const int pad_h = 0;
 const int str_w = 1;
-const int dil_h = 1;
+const int str_h = 1;
 const int dil_w = 1;
+const int dil_h = 1;
 
 const int x_bias = 1;
 const int w_bias = 1;
